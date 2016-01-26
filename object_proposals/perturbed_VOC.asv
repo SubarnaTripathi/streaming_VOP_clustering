@@ -1,0 +1,199 @@
+function [images, windows] = perturbed_VOC()
+%UNTITLED Summary of this function goes here
+%   Detailed explanation goes here
+    load('pascal\\train_images.mat');
+    images = value;
+    clear value;
+
+    load('pascal\\train_segmentations.mat');
+    windows = value;
+    clear value;
+
+    num_rect = 20; %%
+    frame_num = size(images,1);
+    frame_num = 1; %% subarna : debug
+    
+    opts = setEnvironment('speedy');
+    
+    for img_num = 1 : frame_num %%% 1:frame_num (4, 10, 12, 17, 22, 28, 30
+        
+        img = images{img_num};
+        BW = windows{img_num};
+        
+        [Label, bb_num] = bwlabel(BW); %returns in num the number of connected objects found in BW.
+        stats2 = regionprops(Label, {'Area', 'BoundingBox'});
+        
+        figure(1), imshow(img);
+        figure(2), imagesc(Label);
+        
+        %% save inputs
+        dirname = sprintf('pascal\\inputs');    
+        if (~exist(dirname,'dir' )), mkdir(dirname), end        
+        im_name = sprintf('%s\\input%d.png', dirname, img_num);
+        imwrite(img,im_name,'png'); 
+        im_name = sprintf('%s\\masks%d.png', dirname, img_num);       
+        imwrite(Label / max (Label(:)), im_name, 'png');  %imwrite(Label,im_name,'png');         
+                
+        X = zeros(bb_num*num_rect,4);
+        for bb_idx = 1:bb_num 
+            stat = stats2(bb_idx,1);
+            w = stat.BoundingBox;
+            %% perturb 4-D param according to Gaussian distribution
+            var = 15; %2*(w(3)+w(4))*0.1;
+            m = w; sigma = [var 0 0 0;0 var 0 0;0 0 var 0;0 0 0 var ];    
+            
+            %%
+%             start_index = (bb_idx-1)*num_rect+1; end_index = start_index+num_rect-1;
+%             X(start_index: end_index,:) = mgd(num_rect,4,m,sigma);  
+            %%
+            
+            X1 = mgd(num_rect,4,m,sigma); 
+            if X1(1) < 1 
+            X = [X; X1];    
+
+        end 
+        %% divide the whole matrix into two matrices X1 and X2
+        div = int32(bb_num*num_rect/2);
+        X1 = uint32(X(1:div,:)); 
+        X2 = uint32(X(div+1:end,:));
+        
+        clear stats2;
+        
+        [ IoU_mat ] = calc_iou_mat( img, X1, X2 );
+        
+        %% start next steps: quantize IoU and have it in a easy-access cell matrix
+        [D] = quantize_IoU_distance( IoU_mat, X );
+        [F] = Take_samples(img, X, D,opts);
+        %%
+
+        %% fit model
+        if (~opts.kde.learn_bw)
+            p = kde(F',0.05,[],'e');
+        else
+            p = kde(F','lcv',[],'e');
+
+            %f = @(bw,p) nLOO_LL_anis(bw,p);
+            f = @(bw,p,F_val) nLOO_LL_anis(bw,p,F_val);
+            fminsearch_opts.Display = 'off';%'iter';
+            fminsearch_opts.MaxIter = 20;
+
+            reg_min = opts.kde.min_bw; % this regularizes for things like perceptual discriminability, that do not show up in the likelihood fit
+                                       %  reduces the impact of
+                                       %  outlier channels and noise
+            reg_max = opts.kde.max_bw;
+            
+            for i=1:2 % for some reason repeatedly running fminsearch continues to improve the objective
+                bw = getBW(p,1);
+                bw_star = fminsearch(@(bw) f(bw,p,F_val), bw(1:size(bw,1)/2), fminsearch_opts);
+                bw_star = cat(1,bw_star,bw_star);
+                adjustBW(p,min(max(bw_star,reg_min),reg_max));
+            end
+        end
+
+        %%
+        
+
+        figure(100), imshow(IoU_mat);
+        IoU_mat_e = exp(IoU_mat);
+        %keyboard
+
+        %% spectralPb_fast_custom
+        nvec = bb_num; %50; %20   
+        %if (nvec < 2), nvec = 2; end
+        
+        orig_sz = [size(X1,1)+ size(X2,1), 1]; 
+        
+        [E, E_oriented, vect] = find_vect(IoU_mat, orig_sz, nvec);        
+        cluster(vect, nvec, X1, X2, img, img_num, 0);
+        
+        
+        [E, E_oriented, vect] = find_vect(IoU_mat_e, orig_sz, nvec);        
+        cluster(vect, nvec, X1, X2, img, img_num, 1);
+
+        %keyboard
+        clear X1 X2 X IoU_mat IoU_mat_e img BW Label;
+    end    
+    clear images windows;
+
+end
+
+function [E, E_oriented, vect] = find_vect(IoU_mat, orig_sz, nvec)
+
+        [E_oriented, vect] = spectralPb_fast_custom_ST(IoU_mat, orig_sz, nvec);        
+        %E_oriented = borderSuppress(E_oriented);
+        E = max(E_oriented,[],3); 
+end
+
+function cluster(vect, nvec, dt1, dt2, I, im_num, exponentiated)
+    vec(1:size(vect,1),1:nvec) = vect(:,1,:);
+    
+    bb = [dt1; dt2];
+        
+    cluster_num = nvec; %nvec;
+    idx3 = kmeans(vec,cluster_num);
+    J1 = I;      
+
+    randcolors = rand([cluster_num,3]);    
+    for i = 1:cluster_num
+        colorname = uint8(255.*randcolors(i,:)); % [R G B]; 
+        shapeinname = vision.ShapeInserter('Shape','Rectangles','BorderColor','Custom','CustomBorderColor',colorname);
+        
+        index = find(idx3 == i);
+        rectangle = int32(bb(index,:));
+        
+        %%
+        J = step(shapeinname, I, rectangle);
+        save_results_debug(1, exponentiated, im_num, J, i);
+
+        %% : debug
+        J1 = step(shapeinname, J1, rectangle);   
+      
+        clear J;
+        %pause
+    end
+    save_results_debug(2, exponentiated, im_num, J1, i);
+    
+    %% debug
+    if (exponentiated)
+       figure(4); imshow(J1); 
+    else
+       figure(3); imshow(J1);
+    end
+    
+    clear J1;
+end
+
+
+function save_results_debug(variation, exponentiated, im_num, J,i)
+
+%% variation 1: means save individual clusters in different image
+%% variation 2: means save all the clusters in single image
+switch(variation)
+    
+    case 1 
+        %% save results
+        if (exponentiated == 1)
+            dirname = sprintf('pascal\\results_exponentiated\\%d',im_num);
+        else
+            dirname = sprintf('pascal\\results\\%d',im_num);
+        end
+        
+        if (~exist(dirname,'dir' )), mkdir(dirname), end        
+        im_name = sprintf('%s\\%d.png', dirname, i);
+        imwrite(J,im_name,'png');
+        
+    case 2
+         %% save results
+        if (exponentiated == 1)
+            dirname = sprintf('pascal\\results_exponentiated');
+        else
+            dirname = sprintf('pascal\\results');
+        end
+
+        if (~exist(dirname,'dir' )), mkdir(dirname), end        
+        im_name = sprintf('%s\\clustered%d.png', dirname, im_num);
+        imwrite(J,im_name,'png'); 
+        
+end
+
+end
