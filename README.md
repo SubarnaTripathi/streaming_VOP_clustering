@@ -1,6 +1,9 @@
 # streaming_VOP_clustering
 
-This code generates moving and static object proposals (VOP) in generic video and clusters those proposals in a streaming way. Streaming clustering of VOP can enable object class label propagation for temporally consistent object detection in videos.
+This code generates moving and static object proposals (VOP) in generic video and clusters those proposals in a streaming way described in "Detecting Temporally Consistent Objects in Videos through Object Class Label Propagation"
+http://arxiv.org/pdf/1601.05447.pdf.
+
+Streaming clustering of VOP can enable object class label propagation for temporally consistent object detection in videos.
 The code is tested on Ubuntu 14.04
 The MATLAB script vid_obj.m is the starting file. All the dependencies are already available in the package. The demo runs for videos downloaded from Youtube. The input and output folder are there in "Data".
 
