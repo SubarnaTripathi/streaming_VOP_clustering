@@ -17,8 +17,8 @@ options.eb_thresh sets the threshold needed for edgeBoxes score (default is 0.25
 
 options.auto_cluster = 1/0 means Enable or Disbale automatic number of cluster usage 
 
-options.volume_cluster = 1/0 means Enable or Disbale streaming clustering 
+options.volume_cluster = 0/1 means clustering on single frame and entire sub-sequence respectively 
 
-options.volume_frames sets the frame number in a sub-sequence for streaming volume clustering
+options.volume_frames sets the number of frames in a sub-sequence for streaming volume clustering
 
 
