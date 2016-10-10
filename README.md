@@ -21,4 +21,8 @@ options.volume_cluster = 0/1 means clustering on single frame and entire sub-seq
 
 options.volume_frames sets the number of frames in a sub-sequence for streaming volume clustering
 
+###################################################################
+This code uses a major part of affinity based clustering from "Crisp Boundary Detection Using Pointwise Mutual Information" Phillip Isola, Daniel Zoran, Dilip Krishnan, and Edward H. Adelson ECCV, 2014 
+For further details refer to :https://github.com/phillipi/crisp-boundaries
+###################################################################
 
